@@ -9,20 +9,12 @@ BASE_URL="${JEV_BASE_URL:-}"
 HOST="${JEV_HOST:-192.168.0.106}"
 
 if [[ -n "$BASE_URL" ]]; then
-  if [[ "$BASE_URL" == *"demo."* ]]; then
-    HEALTH_URL="${BASE_URL}/v1/decide/health"
-  else
-    HEALTH_URL="${BASE_URL}/health"
-  fi
+  HEALTH_URL="${BASE_URL}/health"
   DECIDE_URL="${BASE_URL}/v1/decide"
   SYSTEMONE_URL="${BASE_URL}/v1/systemone"
   TARGET="$BASE_URL (Cloudflare Tunnel)"
-elif [[ "$HOST" == *"clinivisa.com"* ]] || [[ "$HOST" == *"evidentos.com"* ]]; then
-  if [[ "$HOST" == *"demo."* ]]; then
-    HEALTH_URL="https://${HOST}/v1/decide/health"
-  else
-    HEALTH_URL="https://${HOST}/health"
-  fi
+elif [[ "$HOST" == *"clinivisa.com"* ]]; then
+  HEALTH_URL="https://${HOST}/health"
   DECIDE_URL="https://${HOST}/v1/decide"
   SYSTEMONE_URL="https://${HOST}/v1/systemone"
   TARGET="https://$HOST (Cloudflare Tunnel)"

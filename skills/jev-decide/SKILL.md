@@ -29,14 +29,13 @@ For advanced multi-question decisions (yes/no + choice + scoring in one call), u
   POST https://api.clinivisa.com/v1/decide
   Content-Type: application/json
   ```
-- **Alternate Public Tunnel**: `https://demo.clinivisa.com/v1/decide`
 - **LAN Direct (Internal Network)**:
   ```
   POST http://192.168.0.106:8765/v1/decide
   Content-Type: application/json
   ```
 
-No API key required. Accessible globally via Cloudflare Tunnel or locally over LAN.
+No API key required. Accessible globally via Cloudflare Tunnel (`api.clinivisa.com`) or locally over LAN.
 
 ## Request Shape
 

@@ -32,14 +32,13 @@ For simple single-choice routing, use the simpler `jev-decide` skill.
   POST https://api.clinivisa.com/v1/systemone
   Content-Type: application/json
   ```
-- **Alternate Public Tunnel**: `https://demo.clinivisa.com/v1/systemone`
 - **LAN Direct (Internal Network)**:
   ```
   POST http://192.168.0.106:8011/v1/systemone
   Content-Type: application/json
   ```
 
-No API key required. Accessible globally via Cloudflare Tunnel or locally over LAN.
+No API key required. Accessible globally via Cloudflare Tunnel (`api.clinivisa.com`) or locally over LAN.
 
 ## Question Types
 

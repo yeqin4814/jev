@@ -15,9 +15,8 @@ Unlike autoregressive language models that generate text token-by-token with cha
 | **`jev-decide`** | [`skills/jev-decide/`](skills/jev-decide/) | `POST https://api.clinivisa.com/v1/decide` | `http://192.168.0.106:8765/v1/decide` | Single-choice selection from a list (tool routing, team assignment, intent classification, triage) |
 | **`jev-systemone`** | [`skills/jev-systemone/`](skills/jev-systemone/) | `POST https://api.clinivisa.com/v1/systemone` | `http://192.168.0.106:8011/v1/systemone` | Full multi-question decisions (`noul` yes/no, `choice`, `score` rubric), question dependencies (`depends_on`, `ask_if`), and vision |
 
-> **Public Tunnel Endpoints:**
-> - Primary: `https://api.clinivisa.com` (`/v1/decide`, `/v1/systemone`, `/health`, `/v1/models`)
-> - Alternate: `https://demo.clinivisa.com` and `https://demo.evidentos.com`
+> **Public Cloudflare Tunnel Endpoint:**
+> `https://api.clinivisa.com` (`/v1/decide`, `/v1/systemone`, `/health`, `/v1/models`)
 
 ---
 
@@ -156,8 +155,8 @@ curl -s http://192.168.0.106:8011/v1/systemone \
  
 | Environment Variable | Default | Purpose |
 |---|---|---|
-| `JEV_BASE_URL` | `https://api.clinivisa.com` | Base URL for Cloudflare Tunnel public endpoint (e.g. `https://api.clinivisa.com` or `https://demo.clinivisa.com`) |
-| `JEV_HOST` | `api.clinivisa.com` | Hostname or IP. If domain contains `clinivisa.com` or `evidentos.com`, uses HTTPS tunnel. If IP (e.g. `192.168.0.106`), uses direct LAN ports (`:8765` and `:8011`). |
+| `JEV_BASE_URL` | `https://api.clinivisa.com` | Base URL for Cloudflare Tunnel public endpoint (`https://api.clinivisa.com`) |
+| `JEV_HOST` | `api.clinivisa.com` | Hostname or IP. If `api.clinivisa.com`, uses HTTPS tunnel. If IP (e.g. `192.168.0.106`), uses direct LAN ports (`:8765` and `:8011`). |
 | `JEV_TIMEOUT` | `15` | Request timeout in seconds |
 
 ---
@@ -169,9 +168,6 @@ Run the included smoke test to verify connectivity and all decision paths:
 ```bash
 # Test via Cloudflare Tunnel (default: https://api.clinivisa.com)
 JEV_BASE_URL=https://api.clinivisa.com bash skills/jev-decide/scripts/smoke_jev.sh
-
-# Or test via alternate tunnel (demo.clinivisa.com)
-JEV_BASE_URL=https://demo.clinivisa.com bash skills/jev-decide/scripts/smoke_jev.sh
 
 # Or test locally on the same LAN as Blackwell
 JEV_HOST=192.168.0.106 bash skills/jev-decide/scripts/smoke_jev.sh

@@ -1,7 +1,7 @@
 """
 jev — Lightweight Python client for the Jev decision engine on Blackwell.
 
-Supports both:
+Supports:
 - Public Cloudflare Tunnel: https://api.clinivisa.com (no port needed)
 - LAN Direct Access: http://192.168.0.106 (ports :8765 decide / :8011 systemone)
 
@@ -54,7 +54,7 @@ if JEV_BASE_URL:
     DECIDE_URL = f"{_base}/v1/decide"
     SYSTEMONE_URL = f"{_base}/v1/systemone"
     HEALTH_URL = f"{_base}/health"
-elif "clinivisa.com" in JEV_HOST or "evidentos.com" in JEV_HOST:
+elif "clinivisa.com" in JEV_HOST:
     _scheme = "http" if JEV_HOST.startswith("http://") else "https"
     _clean_host = JEV_HOST.replace("http://", "").replace("https://", "").rstrip("/")
     DECIDE_URL = f"{_scheme}://{_clean_host}/v1/decide"
