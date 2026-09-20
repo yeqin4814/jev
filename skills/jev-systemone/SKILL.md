@@ -25,14 +25,21 @@ autoregressive), giving sub-200ms latency for 3+ questions simultaneously.
 
 For simple single-choice routing, use the simpler `jev-decide` skill.
 
-## Endpoint
+## Endpoints
 
-```
-POST http://192.168.0.106:8011/v1/systemone
-Content-Type: application/json
-```
+- **Public (Cloudflare Tunnel)**:
+  ```
+  POST https://api.clinivisa.com/v1/systemone
+  Content-Type: application/json
+  ```
+- **Alternate Public Tunnel**: `https://demo.clinivisa.com/v1/systemone`
+- **LAN Direct (Internal Network)**:
+  ```
+  POST http://192.168.0.106:8011/v1/systemone
+  Content-Type: application/json
+  ```
 
-No API key required on the local network.
+No API key required. Accessible globally via Cloudflare Tunnel or locally over LAN.
 
 ## Question Types
 

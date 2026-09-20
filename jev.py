@@ -1,6 +1,10 @@
 """
 jev — Lightweight Python client for the Jev decision engine on Blackwell.
 
+Supports both:
+- Public Cloudflare Tunnel: https://api.clinivisa.com (no port needed)
+- LAN Direct Access: http://192.168.0.106 (ports :8765 decide / :8011 systemone)
+
 Usage:
     from jev import decide, systemone
 
@@ -40,10 +44,28 @@ from urllib.error import HTTPError
 
 __all__ = ["decide", "systemone", "health", "JevError"]
 
-JEV_HOST = os.environ.get("JEV_HOST", "192.168.0.106")
-DECIDE_URL = f"http://{JEV_HOST}:8765/v1/decide"
-SYSTEMONE_URL = f"http://{JEV_HOST}:8011/v1/systemone"
-TIMEOUT = int(os.environ.get("JEV_TIMEOUT", "10"))
+# Environment configuration
+JEV_BASE_URL = os.environ.get("JEV_BASE_URL")
+JEV_HOST = os.environ.get("JEV_HOST", "api.clinivisa.com")
+TIMEOUT = int(os.environ.get("JEV_TIMEOUT", "15"))
+
+if JEV_BASE_URL:
+    _base = JEV_BASE_URL.rstrip("/")
+    DECIDE_URL = f"{_base}/v1/decide"
+    SYSTEMONE_URL = f"{_base}/v1/systemone"
+    HEALTH_URL = f"{_base}/health"
+elif "clinivisa.com" in JEV_HOST or "evidentos.com" in JEV_HOST:
+    _scheme = "http" if JEV_HOST.startswith("http://") else "https"
+    _clean_host = JEV_HOST.replace("http://", "").replace("https://", "").rstrip("/")
+    DECIDE_URL = f"{_scheme}://{_clean_host}/v1/decide"
+    SYSTEMONE_URL = f"{_scheme}://{_clean_host}/v1/systemone"
+    HEALTH_URL = f"{_scheme}://{_clean_host}/health"
+else:
+    # Direct LAN or IP host
+    _clean_host = JEV_HOST.replace("http://", "").replace("https://", "").rstrip("/")
+    DECIDE_URL = f"http://{_clean_host}:8765/v1/decide"
+    SYSTEMONE_URL = f"http://{_clean_host}:8011/v1/systemone"
+    HEALTH_URL = f"http://{_clean_host}:8765/health"
 
 
 class JevError(Exception):
@@ -58,7 +80,7 @@ class JevError(Exception):
 def _post(url: str, payload: dict) -> dict:
     """Send a JSON POST and return parsed JSON response."""
     data = json.dumps(payload).encode()
-    req = Request(url, data=data, headers={"Content-Type": "application/json"})
+    req = Request(url, data=data, headers={"Content-Type": "application/json", "User-Agent": "jev-client/1.0"})
     try:
         with urlopen(req, timeout=TIMEOUT) as resp:
             return json.loads(resp.read())
@@ -128,6 +150,6 @@ def systemone(
 
 def health() -> dict[str, Any]:
     """Check engine health. Returns status dict or raises."""
-    req = Request(f"http://{JEV_HOST}:8765/health")
-    with urlopen(req, timeout=5) as resp:
+    req = Request(HEALTH_URL, headers={"User-Agent": "jev-client/1.0"})
+    with urlopen(req, timeout=TIMEOUT) as resp:
         return json.loads(resp.read())

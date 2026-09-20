@@ -1,13 +1,38 @@
 #!/usr/bin/env bash
 # Smoke test for Jev decision engine skills.
-# Run from any machine on the same network as Blackwell (192.168.0.106).
-#
-# Usage:
-#   bash smoke_jev.sh
-#   JEV_HOST=10.0.0.5 bash smoke_jev.sh
+# Supports both:
+#   1. Cloudflare Tunnel: JEV_BASE_URL=https://api.clinivisa.com bash smoke_jev.sh
+#   2. LAN Direct:        JEV_HOST=192.168.0.106 bash smoke_jev.sh
 set -euo pipefail
 
+BASE_URL="${JEV_BASE_URL:-}"
 HOST="${JEV_HOST:-192.168.0.106}"
+
+if [[ -n "$BASE_URL" ]]; then
+  if [[ "$BASE_URL" == *"demo."* ]]; then
+    HEALTH_URL="${BASE_URL}/v1/decide/health"
+  else
+    HEALTH_URL="${BASE_URL}/health"
+  fi
+  DECIDE_URL="${BASE_URL}/v1/decide"
+  SYSTEMONE_URL="${BASE_URL}/v1/systemone"
+  TARGET="$BASE_URL (Cloudflare Tunnel)"
+elif [[ "$HOST" == *"clinivisa.com"* ]] || [[ "$HOST" == *"evidentos.com"* ]]; then
+  if [[ "$HOST" == *"demo."* ]]; then
+    HEALTH_URL="https://${HOST}/v1/decide/health"
+  else
+    HEALTH_URL="https://${HOST}/health"
+  fi
+  DECIDE_URL="https://${HOST}/v1/decide"
+  SYSTEMONE_URL="https://${HOST}/v1/systemone"
+  TARGET="https://$HOST (Cloudflare Tunnel)"
+else
+  HEALTH_URL="http://${HOST}:8765/health"
+  DECIDE_URL="http://${HOST}:8765/v1/decide"
+  SYSTEMONE_URL="http://${HOST}:8011/v1/systemone"
+  TARGET="$HOST (LAN ports :8765 and :8011)"
+fi
+
 PASS=0
 FAIL=0
 
@@ -17,26 +42,26 @@ check() {
   local name="$1" expected="$2" actual="$3"
   if [[ "$actual" == *"$expected"* ]]; then
     green "✓ $name"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     red "✗ $name — expected '$expected', got: $actual"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
 echo "━━━ Jev Skill Smoke Tests ━━━"
-echo "Host: $HOST"
+echo "Target: $TARGET"
 echo
 
-# 1. Health check (adapter)
-echo "── Health ──"
-H=$(curl -sf "http://$HOST:8765/health" 2>&1 || echo '{"error":"unreachable"}')
-check "Adapter health" '"status"' "$H"
+# 1. Health check
+echo "── Health Check ──"
+H=$(curl -sf "$HEALTH_URL" 2>&1 || echo '{"error":"unreachable"}')
+check "Health check" '"' "$H"
 
-# 2. Simple decide (adapter API)
+# 2. Simple decide
 echo
 echo "── jev-decide: simple choice ──"
-D=$(curl -sf "http://$HOST:8765/v1/decide" \
+D=$(curl -sf "$DECIDE_URL" \
   -H 'content-type: application/json' \
   -d '{
     "state": "Customer says: my credit card was charged twice",
@@ -51,10 +76,10 @@ check "Decide returns choice" '"choice"' "$D"
 check "Decide picks billing" '"billing"' "$D"
 check "Decide has probabilities" '"probabilities"' "$D"
 
-# 3. SystemOne: multi-question (native Jev API)
+# 3. SystemOne: multi-question
 echo
 echo "── jev-systemone: multi-question ──"
-S=$(curl -sf "http://$HOST:8011/v1/systemone" \
+S=$(curl -sf "$SYSTEMONE_URL" \
   -H 'content-type: application/json' \
   -d '{
     "state": {"ticket": "Our production database is returning errors and the CEO demo is in 30 minutes"},
@@ -83,7 +108,7 @@ check "SystemOne has score" '"score"' "$S"
 # 4. SystemOne with dependencies
 echo
 echo "── jev-systemone: dependencies ──"
-DEP=$(curl -sf "http://$HOST:8011/v1/systemone" \
+DEP=$(curl -sf "$SYSTEMONE_URL" \
   -H 'content-type: application/json' \
   -d '{
     "state": "User reports a minor typo on the settings page",

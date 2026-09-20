@@ -22,14 +22,21 @@ Use this skill whenever you need to **pick one thing from a list**:
 For advanced multi-question decisions (yes/no + choice + scoring in one call), use the
 `jev-systemone` skill instead.
 
-## Endpoint
+## Endpoints
 
-```
-POST http://192.168.0.106:8765/v1/decide
-Content-Type: application/json
-```
+- **Public (Cloudflare Tunnel)**:
+  ```
+  POST https://api.clinivisa.com/v1/decide
+  Content-Type: application/json
+  ```
+- **Alternate Public Tunnel**: `https://demo.clinivisa.com/v1/decide`
+- **LAN Direct (Internal Network)**:
+  ```
+  POST http://192.168.0.106:8765/v1/decide
+  Content-Type: application/json
+  ```
 
-No API key required on the local network.
+No API key required. Accessible globally via Cloudflare Tunnel or locally over LAN.
 
 ## Request Shape
 
