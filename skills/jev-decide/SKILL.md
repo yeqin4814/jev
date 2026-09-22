@@ -1,47 +1,63 @@
 ---
 name: jev-decide
-description: "Route decisions through the Jev decision engine on Blackwell. Use when you need to pick one option from a list based on context — tool selection, ticket routing, intent classification, triage. Returns calibrated probabilities in <300ms. Triggers: decide, route, classify, pick, triage, which option, which tool."
+description: "Route decisions through the AgentJev reflex decision engine on Blackwell. Use when you need to pick one option from a list or evaluate typed questions (choice, boolean, score) based on context — tool selection, ticket routing, intent classification, triage. Returns calibrated probabilities in 35-80ms. Triggers: decide, route, classify, pick, triage, which option, which tool."
 ---
 
-# Jev Decide — Fast Decision Routing
+# Jev Decide — Fast Decision Routing (AgentJev-0.6B)
 
 ## Overview
 
-Jev Decide sends a context + options payload to the DiffusionGemma 26B decision engine
-running on Blackwell (`192.168.0.106`). It returns a single choice with calibrated
-probabilities and confidence scores — no autoregressive generation, no chain-of-thought.
-Typical latency is **150–300 ms** for up to 8 options.
+Jev Decide sends a context + options payload to the **AgentJev-0.6B** decision engine
+running on NVIDIA DGX Blackwell (`spark-15486`). It returns a single choice with calibrated
+probabilities and confidence scores — without slow autoregressive token generation.
+
+Key specs:
+- **Engine Latency**: **35–80 ms** on Blackwell GB10 GPU.
+- **Edge Latency**: **120–160 ms** globally via Cloudflare Tunnel (`api.clinivisa.com`).
+- **Throughput**: Up to **12.70 QPS** concurrent on a single instance.
+- **Candidates**: Supports 2 to 255 candidates per question (shared-prefix cached).
+- **Primitives**: `choice`, `boolean`, and `score`.
 
 Use this skill whenever you need to **pick one thing from a list**:
 - Which tool to call
 - Which team owns a ticket
 - Which workflow branch to take
 - Intent classification
-- Triage / severity routing
-
-For advanced multi-question decisions (yes/no + choice + scoring in one call), use the
-`jev-systemone` skill instead.
+- Clinical triage / severity routing
 
 ## Endpoints
 
 - **Public (Cloudflare Tunnel)**:
-  ```
+  ```http
   POST https://api.clinivisa.com/v1/decide
   Content-Type: application/json
   ```
-- **LAN Direct (Internal Network)**:
-  ```
-  POST http://192.168.0.106:8765/v1/decide
+- **Native Typed Evaluation (Public)**:
+  ```http
+  POST https://api.clinivisa.com/api/evaluate
   Content-Type: application/json
   ```
+- **Native Engine Metadata (Public)**:
+  ```http
+  GET https://api.clinivisa.com/api/info
+  ```
+- **LAN Direct (spark-15486)**:
+  ```http
+  POST http://192.168.0.106:8765/v1/decide      # OpenJev decider adapter
+  POST http://192.168.0.106:8149/api/evaluate   # Native AgentJev engine
+  GET  http://192.168.0.106:8149/api/info       # Native capabilities
+  ```
 
-No API key required. Accessible globally via Cloudflare Tunnel (`api.clinivisa.com`) or locally over LAN.
+No API key required.
 
-## Request Shape
+---
 
+## 1. Standard Decision API (`/v1/decide`)
+
+### Request Shape
 ```json
 {
-  "state": "<string or object — the context to decide on>",
+  "state": "<string, object, or array — the context to decide on>",
   "criterion": "<what you are deciding>",
   "options": [
     {"id": "option_a", "description": "What option A means"},
@@ -53,111 +69,113 @@ No API key required. Accessible globally via Cloudflare Tunnel (`api.clinivisa.c
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `state` | string or object | Yes | The situation, ticket, user message, or structured data to decide on. |
+| `state` | string or object | Yes | The situation, ticket, user message, or clinical data. |
 | `criterion` | string | Yes | A short sentence describing what you are deciding. |
-| `options` | array of `{id, description}` | Yes | 2–8 options. `id` is the machine-readable label, `description` explains what it means (can be `null`). |
+| `options` | array of `{id, description}` | Yes | 1–255 options. `id` is the machine-readable label, `description` explains what it means. Single options map to boolean verification. |
 
-## Response Shape
-
+### Response Shape
 ```json
 {
-  "id": "dec-5006294d",
+  "id": "dec-9bb1fbc8",
   "abstain": false,
   "top_choice": "option_a",
   "choice": "option_a",
-  "confidence": 0.9913,
+  "confidence": 0.9241,
   "probabilities": {
-    "option_a": 0.9913,
-    "option_b": 0.0081,
-    "option_c": 0.0006
+    "option_a": 0.9241,
+    "option_b": 0.0531,
+    "option_c": 0.0228
   },
-  "forward_seconds": 0.295,
-  "total_seconds": 0.295,
-  "model": "dgemma"
+  "forward_seconds": 0.0452,
+  "total_seconds": 0.1658,
+  "model": "agent-jev-0.6b"
 }
 ```
 
-| Field | Description |
-|---|---|
-| `choice` | The winning option id. |
-| `confidence` | Probability of the winning choice (0–1). |
-| `probabilities` | Calibrated probability for every option. |
-| `abstain` | `true` if the engine could not decide (all options equally unlikely). |
-| `forward_seconds` | Engine inference time. |
+---
 
-## Usage Pattern (curl)
+## 2. Native AgentJev Evaluation API (`/api/evaluate`)
 
-```bash
-curl -s http://192.168.0.106:8765/v1/decide \
-  -H 'content-type: application/json' \
-  -d '{
-    "state": "User says: my build is failing with a segfault in libcuda.so",
-    "criterion": "Which team should handle this ticket?",
-    "options": [
-      {"id": "infra", "description": "Infrastructure, hardware, drivers, CUDA"},
-      {"id": "backend", "description": "Application backend, APIs, databases"},
-      {"id": "frontend", "description": "UI, web, mobile client"}
-    ]
-  }'
+For advanced pipelines or multi-question evaluations:
+
+```json
+{
+  "state": "Production database latency jumped to 5000ms with CPU at 99%",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "choice",
+      "question": "Which triage priority?",
+      "options": ["P0 Outage", "P1 Urgent", "P2 Routine"]
+    }
+  ]
+}
 ```
 
-## Usage Pattern (Python)
+**Response**:
+```json
+{
+  "api_version": "agentjev.decision.v1",
+  "model": "agent-jev",
+  "results": [
+    {
+      "id": "0",
+      "answers": [
+        {
+          "id": "q1",
+          "type": "choice",
+          "value": "0",
+          "description": "P0 Outage",
+          "top_probability": 0.9412,
+          "margin": 0.8842
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "wall_ms": 37.81
+  }
+}
+```
+
+---
+
+## 3. Python Client Usage
+
+A lightweight client is provided in `scripts/jev.py`:
 
 ```python
-import httpx, json
+import sys
+sys.path.append("/Users/nan/.gemini/config/skills/jev-decide/scripts")
+from jev import decide, evaluate
 
-def jev_decide(state: str, criterion: str, options: list[dict]) -> dict:
-    """Pick one option from a list using the Jev decision engine."""
-    resp = httpx.post(
-        "http://192.168.0.106:8765/v1/decide",
-        json={"state": state, "criterion": criterion, "options": options},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-# Example: tool selection
-result = jev_decide(
-    state="User wants to know the weather in Tokyo tomorrow",
-    criterion="Which tool should be called?",
+# Quick pick-one decision
+result = decide(
+    state="Customer says: my credit card was charged twice for order #4021",
+    criterion="Route to the appropriate support queue",
     options=[
-        {"id": "web_search", "description": "Search the internet for information"},
-        {"id": "calculator", "description": "Perform mathematical calculations"},
-        {"id": "weather_api", "description": "Get weather forecasts by location"},
-        {"id": "calendar", "description": "Check or create calendar events"},
+        {"id": "billing", "description": "Payments, credit card charges, refunds, invoices"},
+        {"id": "tech_support", "description": "Application errors, crashes, bugs"},
+        {"id": "account", "description": "Password resets, profile updates"},
     ],
 )
-print(f"Use tool: {result['choice']} (confidence: {result['confidence']:.1%})")
-# → Use tool: weather_api (confidence: 99.2%)
+print(result["choice"])         # "billing"
+print(result["confidence"])     # 0.9845
+print(result["forward_seconds"])# ~0.04s
+
+# Native typed evaluation
+res = evaluate(
+    state="Patient afebrile, vitals normal, wound healing well.",
+    questions=[{
+        "id": "q1",
+        "type": "choice",
+        "question": "Discharge disposition?",
+        "options": ["Discharge home", "Keep for observation", "Admit to ICU"]
+    }]
+)
+print(res["results"][0]["answers"][0]["description"])  # "Discharge home"
 ```
 
-## Best Practices
-
-1. **Be specific in `state`**: Include the raw user message, ticket body, or structured
-   context. More detail → better decisions.
-2. **Write clear `description`s**: The engine reads them. A `null` description means the
-   `id` alone must be self-explanatory.
-3. **2–8 options**: The engine handles up to ~16 but is calibrated best with 2–8.
-4. **Trust the confidence**: Scores are calibrated probabilities from diffusion noise
-   sampling, not softmax logits. A 0.95 means 95% of the time it would pick that option.
-5. **Use `abstain`**: If `abstain: true`, the engine is uncertain — fall back to a
-   language model or ask the user.
-6. **Latency budget**: Expect 150–300 ms on the local network. Safe for real-time
-   agentic loops.
-
-## Health Check
-
-```bash
-curl -s http://192.168.0.106:8765/health
-# → {"status": "ok", "engine": "dgemma", "port": 8011}
-```
-
-## When NOT to Use This
-
-- **Open-ended generation**: Jev is a decision engine, not a chat model. It picks from
-  your options; it does not generate text.
-- **Complex multi-question decisions**: Use `jev-systemone` instead to ask yes/no +
-  choice + scoring questions in a single call.
-- **Knowledge-heavy questions**: Jev decides based on semantic context, not factual recall.
-  Don't ask "What is the capital of France?" — ask "Given the user's message, which
-  intent does it match?"
+## When NOT to use Jev
+- **Open-ended text generation**: Use System 2 Qwen 3.8 Flash Next (`/v1/chat/completions`) for multi-sentence generation.
+- **Context exceeding 2,048 tokens**: AgentJev has a hard limit of 2,048 tokens. For documents over 2k tokens, summarize context first or use System 2.

@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
-# Smoke test for Jev decision engine skills.
+# Smoke test for Jev decision engine skills (AgentJev-0.6B on DGX Blackwell).
 # Supports both:
 #   1. Cloudflare Tunnel: JEV_BASE_URL=https://api.clinivisa.com bash smoke_jev.sh
 #   2. LAN Direct:        JEV_HOST=192.168.0.106 bash smoke_jev.sh
 set -euo pipefail
 
 BASE_URL="${JEV_BASE_URL:-}"
-HOST="${JEV_HOST:-192.168.0.106}"
+HOST="${JEV_HOST:-api.clinivisa.com}"
 
 if [[ -n "$BASE_URL" ]]; then
   HEALTH_URL="${BASE_URL}/health"
+  INFO_URL="${BASE_URL}/api/info"
   DECIDE_URL="${BASE_URL}/v1/decide"
+  EVALUATE_URL="${BASE_URL}/api/evaluate"
   SYSTEMONE_URL="${BASE_URL}/v1/systemone"
   TARGET="$BASE_URL (Cloudflare Tunnel)"
 elif [[ "$HOST" == *"clinivisa.com"* ]]; then
   HEALTH_URL="https://${HOST}/health"
+  INFO_URL="https://${HOST}/api/info"
   DECIDE_URL="https://${HOST}/v1/decide"
+  EVALUATE_URL="https://${HOST}/api/evaluate"
   SYSTEMONE_URL="https://${HOST}/v1/systemone"
   TARGET="https://$HOST (Cloudflare Tunnel)"
 else
-  HEALTH_URL="http://${HOST}:8765/health"
+  HEALTH_URL="http://${HOST}:9010/health"
+  INFO_URL="http://${HOST}:8149/api/info"
   DECIDE_URL="http://${HOST}:8765/v1/decide"
-  SYSTEMONE_URL="http://${HOST}:8011/v1/systemone"
-  TARGET="$HOST (LAN ports :8765 and :8011)"
+  EVALUATE_URL="http://${HOST}:8149/api/evaluate"
+  SYSTEMONE_URL="http://${HOST}:9010/v1/systemone"
+  TARGET="$HOST (LAN direct ports :8149, :8765, :9010)"
 fi
 
 PASS=0
@@ -41,18 +47,27 @@ check() {
   fi
 }
 
-echo "━━━ Jev Skill Smoke Tests ━━━"
+echo "━━━ Jev Skill Smoke Tests (AgentJev-0.6B) ━━━"
 echo "Target: $TARGET"
 echo
 
 # 1. Health check
-echo "── Health Check ──"
+echo "── 1. Gateway & Engine Health Check ──"
 H=$(curl -sf "$HEALTH_URL" 2>&1 || echo '{"error":"unreachable"}')
-check "Health check" '"' "$H"
+check "Health check returns 200" '"gateway":"ok"' "$H"
+check "AgentJev engine is healthy" '"agent_jev":"ok"' "$H"
 
-# 2. Simple decide
+# 2. AgentJev Info
 echo
-echo "── jev-decide: simple choice ──"
+echo "── 2. Native AgentJev Metadata (/api/info) ──"
+I=$(curl -sf "$INFO_URL" 2>&1 || echo '{"error":"unreachable"}')
+check "Info returns model" '"AgentJev-0.6B"' "$I"
+check "Info supports choice" '"choice"' "$I"
+check "Info supports boolean" '"boolean"' "$I"
+
+# 3. Simple decide (/v1/decide)
+echo
+echo "── 3. OpenJev Decision API (/v1/decide) ──"
 D=$(curl -sf "$DECIDE_URL" \
   -H 'content-type: application/json' \
   -d '{
@@ -67,57 +82,46 @@ D=$(curl -sf "$DECIDE_URL" \
 check "Decide returns choice" '"choice"' "$D"
 check "Decide picks billing" '"billing"' "$D"
 check "Decide has probabilities" '"probabilities"' "$D"
+check "Decide backed by agent-jev-0.6b" '"agent-jev-0.6b"' "$D"
 
-# 3. SystemOne: multi-question
+# 4. Native AgentJev evaluate (/api/evaluate)
 echo
-echo "── jev-systemone: multi-question ──"
+echo "── 4. Native AgentJev Typed Evaluation (/api/evaluate) ──"
+E=$(curl -sf "$EVALUATE_URL" \
+  -H 'content-type: application/json' \
+  -d '{
+    "state": "Production database latency jumped to 5000ms with CPU at 99%",
+    "questions": [
+      {
+        "id": "q1",
+        "type": "choice",
+        "question": "Which triage priority?",
+        "options": ["P0 Outage", "P1 Urgent", "P2 Routine"]
+      }
+    ]
+  }' 2>&1 || echo '{"error":"failed"}')
+check "Evaluate returns results" '"results"' "$E"
+check "Evaluate picks P0 Outage" '"P0 Outage"' "$E"
+check "Evaluate reports wall_ms" '"wall_ms"' "$E"
+
+# 5. Legacy systemone shim
+echo
+echo "── 5. Legacy SystemOne Compatibility Shim (/v1/systemone) ──"
 S=$(curl -sf "$SYSTEMONE_URL" \
   -H 'content-type: application/json' \
   -d '{
     "state": {"ticket": "Our production database is returning errors and the CEO demo is in 30 minutes"},
     "questions": {
-      "urgent": {
-        "type": "noul",
-        "instructions": "Does this need immediate attention?"
-      },
       "team": {
         "type": "choice",
         "instructions": "Which team should handle this?",
         "criteria": {"database": "DB ops and queries", "frontend": "UI issues", "network": "Connectivity"}
-      },
-      "severity": {
-        "type": "score",
-        "instructions": "How severe is the impact?",
-        "criteria": ["low", "medium", "high", "critical"]
       }
     }
   }' 2>&1 || echo '{"error":"failed"}')
 check "SystemOne returns answers" '"answers"' "$S"
-check "SystemOne has noul" '"noul"' "$S"
-check "SystemOne has choice" '"choice"' "$S"
-check "SystemOne has score" '"score"' "$S"
-
-# 4. SystemOne with dependencies
-echo
-echo "── jev-systemone: dependencies ──"
-DEP=$(curl -sf "$SYSTEMONE_URL" \
-  -H 'content-type: application/json' \
-  -d '{
-    "state": "User reports a minor typo on the settings page",
-    "questions": {
-      "is_bug": {
-        "type": "noul",
-        "instructions": "Is this a bug report?"
-      },
-      "priority": {
-        "type": "score",
-        "instructions": "What priority should this bug get?",
-        "criteria": ["p3_low", "p2_medium", "p1_high", "p0_critical"],
-        "ask_if": {"is_bug": ["yes"]}
-      }
-    }
-  }' 2>&1 || echo '{"error":"failed"}')
-check "Dependencies return answers" '"answers"' "$DEP"
+check "SystemOne returns choice" '"choice"' "$S"
+check "SystemOne marked as deprecated shim" '"deprecated":true' "$S"
 
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

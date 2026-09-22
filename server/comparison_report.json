@@ -1,0 +1,192 @@
+{
+  "hardware": "NVIDIA GB10 (Grace Blackwell unified architecture)",
+  "models": {
+    "agent_jev": "AgentJev-0.6B (aimeigaoshou/agent-jev, Qwen3-0.6B backbone, port 8149)",
+    "kev_9b": "Kev-9B (jaredpalmer/kev-9b, Qwen3.5-9B-Base backbone, port 8011)"
+  },
+  "options_scaling": {
+    "2_options": {
+      "agent_jev_0.6b": {
+        "mean_ms": 109.67,
+        "p50_ms": 129.59,
+        "p90_ms": 150.86,
+        "min_ms": 35.23,
+        "max_ms": 150.87,
+        "stdev_ms": 46.74
+      },
+      "kev_9b": {
+        "mean_ms": 295.67,
+        "p50_ms": 395.09,
+        "p90_ms": 467.18,
+        "min_ms": 117.91,
+        "max_ms": 469.73,
+        "stdev_ms": 164.17
+      },
+      "speedup_pct": 67.2
+    },
+    "4_options": {
+      "agent_jev_0.6b": {
+        "mean_ms": 114.55,
+        "p50_ms": 129.26,
+        "p90_ms": 145.98,
+        "min_ms": 41.66,
+        "max_ms": 146.06,
+        "stdev_ms": 38.01
+      },
+      "kev_9b": {
+        "mean_ms": 239.92,
+        "p50_ms": 149.8,
+        "p90_ms": 427.77,
+        "min_ms": 138.04,
+        "max_ms": 430.24,
+        "stdev_ms": 135.76
+      },
+      "speedup_pct": 13.7
+    },
+    "8_options": {
+      "agent_jev_0.6b": {
+        "mean_ms": 99.9,
+        "p50_ms": 126.62,
+        "p90_ms": 149.12,
+        "min_ms": 50.45,
+        "max_ms": 152.91,
+        "stdev_ms": 46.36
+      },
+      "kev_9b": {
+        "mean_ms": 282.01,
+        "p50_ms": 172.43,
+        "p90_ms": 453.37,
+        "min_ms": 167.41,
+        "max_ms": 458.78,
+        "stdev_ms": 142.23
+      },
+      "speedup_pct": 26.6
+    },
+    "16_options": {
+      "agent_jev_0.6b": {
+        "mean_ms": 142.55,
+        "p50_ms": 145.2,
+        "p90_ms": 170.74,
+        "min_ms": 80.01,
+        "max_ms": 249.6,
+        "stdev_ms": 43.97
+      },
+      "kev_9b": {
+        "mean_ms": 313.05,
+        "p50_ms": 226.45,
+        "p90_ms": 239.2,
+        "min_ms": 222.39,
+        "max_ms": 1517.23,
+        "stdev_ms": 333.15
+      },
+      "speedup_pct": 35.9
+    }
+  },
+  "decision_quality_scenarios": [
+    {
+      "scenario": "Acute MI Triage",
+      "agent_jev": {
+        "winner": "Immediate emergent activation of cardiac catheterization lab",
+        "confidence": 0.317,
+        "margin": 0.0,
+        "latency_ms": 45.0
+      },
+      "kev_9b": {
+        "winner": "Immediate emergent activation of cardiac catheterization lab",
+        "confidence": 0.99,
+        "margin": 0.98,
+        "latency_ms": 159.2
+      },
+      "agreement": true
+    },
+    {
+      "scenario": "Agent CI/CD Test Gate",
+      "agent_jev": {
+        "winner": "Block merge due to failing test regression in token expiration",
+        "confidence": 0.57,
+        "margin": 0.313,
+        "latency_ms": 159.1
+      },
+      "kev_9b": {
+        "winner": "Block merge due to failing test regression in token expiration",
+        "confidence": 0.91,
+        "margin": 0.86,
+        "latency_ms": 445.8
+      },
+      "agreement": true
+    },
+    {
+      "scenario": "Tool Dispatch Routing",
+      "agent_jev": {
+        "winner": "Run EXPLAIN ANALYZE on table patients_v2 via database inspection tool",
+        "confidence": 0.586,
+        "margin": 0.404,
+        "latency_ms": 128.3
+      },
+      "kev_9b": {
+        "winner": "Run EXPLAIN ANALYZE on table patients_v2 via database inspection tool",
+        "confidence": 0.93,
+        "margin": 0.9,
+        "latency_ms": 169.2
+      },
+      "agreement": true
+    }
+  ],
+  "context_scaling": {
+    "100 tokens": {
+      "agent_jev": {
+        "latency_ms": 161.7,
+        "error": null
+      },
+      "kev_9b": {
+        "latency_ms": 160.3,
+        "error": null
+      }
+    },
+    "500 tokens": {
+      "agent_jev": {
+        "latency_ms": 160.3,
+        "error": null
+      },
+      "kev_9b": {
+        "latency_ms": 243.3,
+        "error": null
+      }
+    },
+    "1,500 tokens": {
+      "agent_jev": {
+        "latency_ms": 252.8,
+        "error": null
+      },
+      "kev_9b": {
+        "latency_ms": 1145.2,
+        "error": null
+      }
+    },
+    "2,500 tokens (Exceeds AgentJev 2k limit)": {
+      "agent_jev": {
+        "latency_ms": 479.6,
+        "error": null
+      },
+      "kev_9b": {
+        "latency_ms": 1470.1,
+        "error": null
+      }
+    }
+  },
+  "concurrency_throughput": {
+    "concurrency_1": {
+      "agent_jev_qps": 8.84,
+      "kev_9b_qps": 5.05
+    },
+    "concurrency_2": {
+      "agent_jev_qps": 12.7,
+      "kev_9b_qps": 2.48
+    },
+    "concurrency_4": {
+      "agent_jev_qps": 9.69,
+      "kev_9b_qps": 4.44
+    }
+  },
+  "benchmark_elapsed_sec": 57.99
+}

@@ -1,22 +1,20 @@
-# Jev: Decision Engine Skills for Coding Agents
+# Jev: Decision Engine Skills & Infrastructure for Coding Agents
 
-Agent skills, workflows, and client libraries for the **Jev** high-speed decision engine, backed by **DiffusionGemma 26B-A4B (NVFP4)** running via `djev-spark` on Blackwell.
+Agent skills, workflows, client libraries, and server gateway infrastructure for the **Jev** high-speed decision engine, powered by **AgentJev-0.6B** (`aimeigaoshou/agent-jev`) running on NVIDIA DGX Blackwell (`spark-15486`).
 
-Unlike autoregressive language models that generate text token-by-token with chain-of-thought overhead, Jev scores options and answers typed questions in parallel across a discrete diffusion canvas. Decisions complete in **150–300 ms** with calibrated probability scores.
+Unlike slow autoregressive language models that generate reasoning tokens sequentially, Jev evaluates option candidates in parallel with permutation equivariance. Decisions execute in **35–80 ms** with calibrated confidence scores and an ultra-lightweight **2.45 GiB VRAM** footprint (reclaiming 14.1 GiB from legacy Kev-9B).
 
 ---
 
-## Skills Included
-
-## Skills Included
+## Skills & Capabilities
 
 | Skill | Directory | Primary Endpoint (Cloudflare Tunnel) | LAN Direct Endpoint | Best For |
 |---|---|---|---|---|
 | **`jev-decide`** | [`skills/jev-decide/`](skills/jev-decide/) | `POST https://api.clinivisa.com/v1/decide` | `http://192.168.0.106:8765/v1/decide` | Single-choice selection from a list (tool routing, team assignment, intent classification, triage) |
-| **`jev-systemone`** | [`skills/jev-systemone/`](skills/jev-systemone/) | `POST https://api.clinivisa.com/v1/systemone` | `http://192.168.0.106:8011/v1/systemone` | Full multi-question decisions (`noul` yes/no, `choice`, `score` rubric), question dependencies (`depends_on`, `ask_if`), and vision |
+| **`jev-systemone`** | [`skills/jev-systemone/`](skills/jev-systemone/) | `POST https://api.clinivisa.com/api/evaluate` | `http://192.168.0.106:8149/api/evaluate` | Typed evaluations (`choice`, `boolean`, `score`), multi-question decision trees, scoring rubrics |
 
 > **Public Cloudflare Tunnel Endpoint:**
-> `https://api.clinivisa.com` (`/v1/decide`, `/v1/systemone`, `/health`, `/v1/models`)
+> `https://api.clinivisa.com` (`/v1/decide`, `/api/evaluate`, `/api/info`, `/v1/systemone`, `/health`, `/v1/models`)
 
 ---
 
@@ -72,53 +70,60 @@ print(f"Confidence: {result['confidence']:.2%}")
 print(f"Probabilities: {result['probabilities']}")
 # Output:
 # Top Choice: billing
-# Confidence: 99.13%
+# Confidence: 98.45%
 ```
 
-### 2. Multi-Question Structured Decision (`systemone`)
+### 2. Native Typed Evaluation (`evaluate`)
 
 ```python
-from jev import systemone
+from jev import evaluate
 
-result = systemone(
-    state={"ticket": "All production services are down and the executive team demo is in 30 minutes."},
-    instructions="Triage this incoming incident.",
-    questions={
-        "urgent": {
-            "type": "noul",
-            "instructions": "Does this require immediate escalation within 15 minutes?",
-        },
-        "team": {
+result = evaluate(
+    state="Production database latency jumped to 5000ms with CPU at 99%",
+    questions=[
+        {
+            "id": "triage",
             "type": "choice",
-            "instructions": "Which response team should be paged?",
+            "question": "Which triage priority?",
+            "options": ["P0 Outage", "P1 Urgent", "P2 Routine"]
+        },
+        {
+            "id": "escalation",
+            "type": "boolean",
+            "question": "Does this require on-call paging?",
             "criteria": {
-                "sre_outage": "Site reliability and critical infrastructure down",
-                "application": "App bug or logic error",
-                "customer_success": "Customer communication only",
-            },
-        },
-        "severity": {
-            "type": "score",
-            "instructions": "Incident severity score",
-            "criteria": ["sev3_minor", "sev2_major", "sev1_critical", "sev0_catastrophic"],
-        },
-    },
+                "true": "Immediate paging required",
+                "false": "Can wait for business hours"
+            }
+        }
+    ]
 )
 
-answers = result["answers"]
-print("Urgency probability:", answers["urgent"]["noul"])
-print("Team:", answers["team"]["choice"], answers["team"]["confidence"])
-print("Severity:", answers["severity"]["score"], answers["severity"]["confidence"])
+for ans in result["results"][0]["answers"]:
+    print(ans["id"], ans.get("description") or ans.get("value"))
+# Output:
+# triage P0 Outage
+# escalation True
 ```
+
+---
+
+## Server Architecture (`server/`)
+
+The repository includes production server configurations deployed on NVIDIA DGX Blackwell:
+
+- **`server/decider_adapter.py`**: FastAPI adapter running on port `8765`, adapting standard OpenJev `/v1/decide` requests into AgentJev evaluations.
+- **`server/jev_gateway.py`**: Unified gateway running on port `9010`, handling CORS, reverse proxying, health diagnostics, and the legacy Kev-9B backward compatibility bridge.
+- **`server/comparison_report.json`**: Head-to-head benchmark results validating AgentJev's 67% latency improvement and 5.1x throughput over Kev-9B.
 
 ---
 
 ## Raw HTTP Usage
 
-### Curl Example (`/v1/decide`)
+### OpenJev Standard (`/v1/decide`)
 
 ```bash
-curl -s http://192.168.0.106:8765/v1/decide \
+curl -s -X POST https://api.clinivisa.com/v1/decide \
   -H 'Content-Type: application/json' \
   -d '{
     "state": "Build failed with segfault in libcuda.so",
@@ -131,32 +136,32 @@ curl -s http://192.168.0.106:8765/v1/decide \
   }'
 ```
 
-### Curl Example (`/v1/systemone`)
+### Native AgentJev Typed Evaluation (`/api/evaluate`)
 
 ```bash
-curl -s http://192.168.0.106:8011/v1/systemone \
+curl -s -X POST https://api.clinivisa.com/api/evaluate \
   -H 'Content-Type: application/json' \
   -d '{
-    "state": {"ticket": "Database connection pool exhausted"},
-    "questions": {
-      "urgent": {"type": "noul", "instructions": "Is service degraded?"},
-      "area": {
+    "state": "Patient vital signs stable, afebrile.",
+    "questions": [
+      {
+        "id": "q1",
         "type": "choice",
-        "instructions": "Which domain?",
-        "criteria": {"db": "Database ops", "api": "REST APIs", "web": "Frontend"}
+        "question": "Which disposition priority?",
+        "options": ["Discharge home", "Admit to ICU", "Keep under observation"]
       }
-    }
+    ]
   }'
 ```
 
 ---
 
 ## Configuration
- 
+
 | Environment Variable | Default | Purpose |
 |---|---|---|
-| `JEV_BASE_URL` | `https://api.clinivisa.com` | Base URL for Cloudflare Tunnel public endpoint (`https://api.clinivisa.com`) |
-| `JEV_HOST` | `api.clinivisa.com` | Hostname or IP. If `api.clinivisa.com`, uses HTTPS tunnel. If IP (e.g. `192.168.0.106`), uses direct LAN ports (`:8765` and `:8011`). |
+| `JEV_BASE_URL` | `https://api.clinivisa.com` | Base URL for Cloudflare Tunnel public endpoint |
+| `JEV_HOST` | `api.clinivisa.com` | Hostname or IP. If `api.clinivisa.com`, uses HTTPS tunnel. If LAN IP, uses ports `:8765` and `:8149`. |
 | `JEV_TIMEOUT` | `15` | Request timeout in seconds |
 
 ---
