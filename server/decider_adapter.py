@@ -1,28 +1,28 @@
-"""Clinivisa Decider Adapter v2.1.0
-Exposes openjev-style POST /v1/decide on :8765.
-Primary backend: AgentJev-0.6B (:8149) for ~45-80ms reflex decisions and 2.4 GiB VRAM footprint.
-Note: Kev-9B (:8011) is deprecated and permanently masked.
+"""Clinivisa Decider Adapter v2.2.0
+Exposes openjev-style POST /v1/decide on :8765 with simplified, ultra-flexible input schemas.
+Supports options as list of strings, list of dicts, or comma-separated string.
+Primary backend: AgentJev-0.6B (:8149) for ~35-80ms reflex decisions.
 """
 import json, os, time, uuid
 import urllib.request
 import urllib.error
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Union, Dict, List, Any
+from typing import Union, Dict, List, Any, Optional
 
 AGENT_JEV_UPSTREAM = os.environ.get("AGENT_JEV_UPSTREAM", "http://127.0.0.1:8149/api/evaluate")
 AGENT_JEV_HEALTH = os.environ.get("AGENT_JEV_HEALTH", "http://127.0.0.1:8149/api/info")
 
-app = FastAPI(title="Clinivisa Decider Adapter", version="2.1.0")
+app = FastAPI(title="Clinivisa Decider Adapter", version="2.2.0")
 
 class Option(BaseModel):
     id: str
     description: str = ""
 
 class DecideReq(BaseModel):
-    state: Union[str, Dict[str, Any], List[Any]]
-    criterion: str
-    options: List[Option]
+    state: Union[str, Dict[str, Any], List[Any]] = ""
+    criterion: Optional[str] = "Select the most appropriate option"
+    options: Union[List[str], List[Option], str]
 
 @app.get("/health")
 @app.get("/v1/decide/health")
@@ -44,20 +44,40 @@ def decide(req: DecideReq):
     t0 = time.time()
     abstain_below = float(os.environ.get("DECIDER_ABSTAIN_BELOW", "0.3"))
     state_str = json.dumps(req.state, ensure_ascii=False) if isinstance(req.state, (dict, list)) else str(req.state)
+    criterion_str = req.criterion.strip() if req.criterion else "Select the most appropriate option"
     
-    if not req.options:
+    # Normalize options: string, list of strings, or list of Option
+    raw_options = req.options
+    if isinstance(raw_options, str):
+        parts = [p.strip() for p in raw_options.replace("\n", ",").split(",") if p.strip()]
+        options_list = [Option(id=p, description=p) for p in parts]
+    elif isinstance(raw_options, list):
+        options_list = []
+        for o in raw_options:
+            if isinstance(o, str):
+                options_list.append(Option(id=o.strip(), description=o.strip()))
+            elif isinstance(o, Option):
+                options_list.append(o)
+            elif isinstance(o, dict):
+                options_list.append(Option(id=str(o.get("id", o.get("text", ""))), description=str(o.get("description", o.get("text", "")))))
+            else:
+                options_list.append(Option(id=str(o), description=str(o)))
+    else:
+        raise HTTPException(400, "options must be a list of strings, list of dicts, or comma-separated string")
+
+    if not options_list:
         raise HTTPException(400, "options list must not be empty")
 
     # Single-option requests mapped to boolean primitive
-    if len(req.options) == 1:
-        opt = req.options[0]
+    if len(options_list) == 1:
+        opt = options_list[0]
         payload = {
-            "state": state_str,
+            "state": state_str or criterion_str,
             "questions": [
                 {
                     "id": "q1",
                     "type": "boolean",
-                    "question": req.criterion,
+                    "question": criterion_str,
                     "criteria": {
                         "true": opt.description or opt.id,
                         "false": f"Negative condition / reject {opt.id}"
@@ -66,15 +86,15 @@ def decide(req: DecideReq):
             ]
         }
     else:
-        opts_list = [o.description or o.id for o in req.options]
+        opts_descriptions = [o.description or o.id for o in options_list]
         payload = {
             "state": state_str,
             "questions": [
                 {
                     "id": "q1",
                     "type": "choice",
-                    "question": req.criterion,
-                    "options": opts_list
+                    "question": criterion_str,
+                    "options": opts_descriptions
                 }
             ]
         }
@@ -100,7 +120,7 @@ def decide(req: DecideReq):
 
     if ans["type"] == "boolean":
         p_true = round(float(ans.get("probability", 0.5)), 4)
-        opt = req.options[0]
+        opt = options_list[0]
         is_selected = bool(ans.get("value", True))
         conf = p_true if is_selected else round(1.0 - p_true, 4)
         abstained = conf < abstain_below
@@ -117,13 +137,13 @@ def decide(req: DecideReq):
         }
     else:
         winner_idx = int(ans.get("value", 0))
-        top_choice = req.options[winner_idx].id if winner_idx < len(req.options) else req.options[0].id
+        top_choice = options_list[winner_idx].id if winner_idx < len(options_list) else options_list[0].id
         dist = ans.get("distribution", {})
         probs = {}
         for k, v in dist.items():
             idx = int(k)
-            if idx < len(req.options):
-                probs[req.options[idx].id] = round(float(v), 4)
+            if idx < len(options_list):
+                probs[options_list[idx].id] = round(float(v), 4)
         conf = round(float(ans.get("top_probability", 0.0)), 4)
         abstained = conf < abstain_below
         return {

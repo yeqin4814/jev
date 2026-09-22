@@ -144,6 +144,44 @@ For advanced pipelines or multi-question evaluations:
 
 A lightweight client is provided in `scripts/jev.py`:
 
+### Quick Start: Simplified Prompts
+
+```python
+import sys
+sys.path.append("/Users/nan/.gemini/config/skills/jev-decide/scripts")
+from jev import reflex, boolean, decide, score, evaluate
+
+# 1. Universal single-prompt reflex (~35ms)
+# Boolean gate:
+is_emergency = reflex("Is acute myocardial infarction an emergency?")
+print(is_emergency["result"], is_emergency["confidence"])  # True, 0.84
+
+# Categorical selection (simple list of strings!):
+action = reflex(
+    prompt="Select immediate clinical priority",
+    context="Patient presents with acute chest pain, BP 80/50, ST elevation",
+    options=["Emergency cath lab", "Observation", "Discharge"]
+)
+print(action["top_choice"], action["confidence"])  # "Emergency cath lab"
+
+# 2. Ordered rubric & risk scoring (~35ms)
+risk = score(
+    question="Rate sepsis risk",
+    context="Patient has fever 103F, HR 135, BP 75/45, altered mental status",
+    levels=["low", "moderate", "high", "critical"]
+)
+print(risk["level"], risk["score"])  # "critical", 2.85
+
+# 3. Categorical choice via decide() (~45ms)
+res = decide(
+    state="Customer requesting refund past 30 days without receipt",
+    options=["Approve exception", "Deny refund", "Escalate to supervisor"]
+)
+print(res["top_choice"])
+```
+
+### Full / Advanced Examples
+
 ```python
 import sys
 sys.path.append("/Users/nan/.gemini/config/skills/jev-decide/scripts")

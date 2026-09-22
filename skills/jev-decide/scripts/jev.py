@@ -45,7 +45,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-__all__ = ["decide", "evaluate", "info", "systemone", "health", "JevError"]
+__all__ = ["reflex", "decide", "boolean", "score", "evaluate", "info", "systemone", "health", "JevError"]
 
 # Environment configuration
 JEV_BASE_URL = os.environ.get("JEV_BASE_URL")
@@ -102,22 +102,110 @@ def _post(url: str, payload: dict) -> dict:
         raise JevError(e.code, msg) from e
 
 
+def reflex(
+    prompt: str,
+    context: str | dict | list | None = None,
+    options: list[str] | list[dict[str, str]] | str | None = None,
+) -> dict[str, Any]:
+    """Universal single-prompt System 1 reflex (~35ms).
+    
+    - If options provided: selects the winning choice.
+    - If no options provided: evaluates prompt as True/False with calibrated confidence.
+    """
+    if options:
+        return decide(state=context or prompt, criterion=prompt, options=options)
+    return boolean(statement=prompt, context=context)
+
+
+def boolean(
+    statement: str,
+    context: str | dict | list | None = None,
+    true_criteria: str = "Condition is met / Affirmative",
+    false_criteria: str = "Condition is not met / Negative",
+) -> dict[str, Any]:
+    """Ultra-fast binary verification gate (~35ms) with calibrated probability."""
+    state_str = json.dumps(context, ensure_ascii=False) if isinstance(context, (dict, list)) else (str(context) if context else statement)
+    payload = {
+        "state": state_str,
+        "questions": [
+            {
+                "id": "q1",
+                "type": "boolean",
+                "question": statement,
+                "criteria": {"true": true_criteria, "false": false_criteria}
+            }
+        ]
+    }
+    raw = _post(EVALUATE_URL, payload)
+    ans = raw["results"][0]["answers"][0]
+    is_true = bool(ans.get("value", True))
+    p = round(float(ans.get("probability", 0.5)), 4)
+    return {
+        "result": is_true,
+        "confidence": p if is_true else round(1.0 - p, 4),
+        "probability_true": p,
+        "wall_ms": raw.get("usage", {}).get("wall_ms", 0.0),
+        "model": "AgentJev-0.6B"
+    }
+
+
+def score(
+    question: str,
+    context: str | dict | list | None = None,
+    levels: list[str] | None = None,
+) -> dict[str, Any]:
+    """Fast continuous/ordered rubric rating (~35ms)."""
+    rubric_levels = levels or ["low", "moderate", "high", "critical"]
+    state_str = json.dumps(context, ensure_ascii=False) if isinstance(context, (dict, list)) else (str(context) if context else question)
+    payload = {
+        "state": state_str,
+        "questions": [
+            {
+                "id": "q_score",
+                "type": "score",
+                "question": question,
+                "levels": rubric_levels
+            }
+        ]
+    }
+    raw = _post(EVALUATE_URL, payload)
+    ans = raw["results"][0]["answers"][0]
+    lvl_idx = int(ans.get("level", 0))
+    lvl_name = rubric_levels[lvl_idx] if lvl_idx < len(rubric_levels) else str(lvl_idx)
+    return {
+        "level": lvl_name,
+        "level_index": lvl_idx,
+        "score": round(float(ans.get("score", 0.0)), 4),
+        "distribution": {rubric_levels[int(k)]: round(float(v), 4) for k, v in ans.get("distribution", {}).items() if int(k) < len(rubric_levels)},
+        "wall_ms": raw.get("usage", {}).get("wall_ms", 0.0),
+        "model": "AgentJev-0.6B"
+    }
+
+
 def decide(
     state: str | dict | list,
-    criterion: str,
-    options: list[dict[str, str | None]],
+    options: list[str] | list[dict[str, str | None]] | str,
+    criterion: str = "Select the most appropriate option",
 ) -> dict[str, Any]:
-    """Pick one option from a list using AgentJev-0.6B on Blackwell.
+    """Pick one option from a list using AgentJev-0.6B on Blackwell (~45ms).
 
     Args:
         state: The context to decide on (string, dict, or list).
-        criterion: What you are deciding.
-        options: List of {"id": str, "description": str | None}.
+        options: List of strings (e.g. ["A", "B"]), comma-separated string, or list of dicts.
+        criterion: What you are deciding (optional, defaults to "Select the most appropriate option").
 
     Returns:
         Dict with keys: id, choice, top_choice, confidence, probabilities,
         abstain, forward_seconds, total_seconds, model.
     """
+    if isinstance(options, str):
+        opt_list = [o.strip() for o in options.split(",") if o.strip()]
+        options_arg = [{"id": o, "description": o} for o in opt_list]
+    elif options and isinstance(options[0], str):
+        options_arg = [{"id": o, "description": o} for o in options]
+    else:
+        options_arg = options
+
     return _post(DECIDE_URL, {
         "state": state,
         "criterion": criterion,
